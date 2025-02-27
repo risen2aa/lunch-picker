@@ -146,8 +146,9 @@ def index():
                 if restaurant in photos_dict and 0 <= photo_index < len(photos_dict[restaurant]):
                     del photos_dict[restaurant][photo_index]
                     if not photos_dict[restaurant]:
-                        del photos_dict[restaurant]
-                    save_photos(photos_dict)
+                        db.collection('photos').document(restaurant).delete()  # 빈 리스트면 문서 삭제
+                    else:
+                        save_photos(photos_dict)
                     message = "사진이 삭제되었습니다!"
             
             elif 'delete_review' in request.form and 'restaurant' in request.form:
