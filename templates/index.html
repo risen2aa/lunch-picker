@@ -4,18 +4,21 @@
     <title>명학역 맛집 추천 - Lunch Picker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google-site-verification" content="TPRt5LM396yvwx4Tvay0KJ0wY3klSksImmYfM4Dld40" />
+    <meta name="description" content="명학역 맛집 추천! 명학역 근처 맛집 리뷰와 사진을 확인하고, 추천받아보세요.">
+    <meta name="keywords" content="명학역 맛집, 명학역 맛집 추천, 명학역 근처 식당">
     <style>
-        body { font-family: 'Helvetica', Arial, sans-serif; margin: 0; background-color: #f0f0f0; display: flex; }
-        .sidebar { width: 200px; background: #fff; padding: 10px; border-right: 1px solid #ddd; overflow-y: auto; height: 100vh; position: fixed; }
+        body { font-family: 'Helvetica', Arial, sans-serif; margin: 0; background-color: #f5f5f5; display: flex; }
+        .sidebar { width: 200px; background: #fafafa; padding: 10px; border-right: 1px solid #e0e0e0; overflow-y: auto; height: 100vh; position: fixed; }
         .sidebar h2 { color: #333; font-size: 16px; margin: 10px 0; }
+        .sidebar input { width: 90%; padding: 5px; margin-bottom: 10px; }
         .sidebar ul { list-style: none; padding: 0; }
         .sidebar li { margin: 2px 0; }
         .sidebar form { margin: 0; }
         .sidebar button { background: none; border: none; color: #1e88e5; text-align: left; width: 100%; padding: 2px 5px; cursor: pointer; font-size: 14px; }
         .sidebar button:hover { text-decoration: underline; }
         .main { flex-grow: 1; padding: 20px; margin-left: 200px; display: flex; justify-content: center; }
-        .content { max-width: 600px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
-        .photo-gallery { width: 300px; margin-left: 20px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .content { max-width: 600px; background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
+        .photo-gallery { width: 300px; margin-left: 20px; background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         h1 { color: #333; font-size: 24px; margin-bottom: 20px; }
         h2, h3 { color: #555; font-size: 18px; }
         input[type="text"], input[type="number"], textarea { width: 80%; max-width: 400px; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
@@ -32,22 +35,25 @@
         .avg-rating { font-size: 18px; color: #ff9800; }
         a { color: #1e88e5; text-decoration: none; }
         a:hover { text-decoration: underline; }
-        img { max-width: 200px; margin: 10px; border-radius: 5px; cursor: pointer; }
+        img { max-width: 100%; margin: 0; border-radius: 5px; cursor: pointer; }
         .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); }
         .modal-content { margin: 15% auto; display: block; max-width: 80%; max-height: 80%; }
         .close { position: absolute; top: 10px; right: 25px; color: white; font-size: 35px; font-weight: bold; cursor: pointer; }
+        .message { color: green; margin: 10px 0; }
+        .error { color: red; margin: 10px 0; }
         @media (max-width: 768px) {
             .sidebar { width: 150px; }
             .main { margin-left: 150px; }
             .content { max-width: 100%; }
-            .photo-gallery { width: 100%; margin-left: 0; margin-top: 20px; }
+            .photo-gallery { width: calc(100% - 170px); margin-left: 0; margin-top: 20px; }
         }
     </style>
 </head>
 <body>
     <div class="sidebar">
         <h2>식당 목록</h2>
-        <ul>
+        <input type="text" id="searchInput" placeholder="식당 검색" onkeyup="filterRestaurants()">
+        <ul id="restaurantList">
             {% for restaurant in restaurants %}
                 <li>
                     <form method="POST">
@@ -60,7 +66,15 @@
     </div>
     <div class="main">
         <div class="content">
-            <h1>오늘 점심 뭐 먹지?</h1>
+            <h1>명학역 맛집 추천</h1>
+            <p>명학역 근처에서 맛있는 식사를 찾고 계신가요? Lunch Picker로 추천받아보세요!</p>
+            {% if message %}
+                {% if "오류" in message %}
+                    <p class="error">{{ message }}</p>
+                {% else %}
+                    <p class="message">{{ message }}</p>
+                {% endif %}
+            {% endif %}
             <form method="POST">
                 <input type="text" name="preference" placeholder="먹고 싶은 메뉴 입력">
                 <button type="submit">추천받기</button>
@@ -72,6 +86,7 @@
                     <p>주메뉴: {{ pick.main_menu }}</p>
                     <p>식당명: {{ pick.name }}</p>
                     <p><a href="{{ pick.url }}" target="_blank">{{ pick.url or "URL 없음" }}</a></p>
+                    <button onclick="toggleFavorite('{{ pick.name }}')" id="fav-{{ pick.name }}">즐겨찾기</button>
                 </div>
 
                 <div class="review-form">
@@ -81,17 +96,18 @@
                         <input type="text" name="username" placeholder="이름 (선택)" maxlength="20">
                         <input type="number" name="rating" min="1" max="5" placeholder="별점 (1-5)" required>
                         <textarea name="review" placeholder="후기" rows="3" required></textarea>
-                        <button type="submit" class="review-btn">리뷰 등록</button>
+                        <button type="submit" class="review-btn" onclick="this.disabled=true; this.innerText='등록 중...'; this.form.submit();">리뷰 등록</button>
                     </form>
                 </div>
 
                 <div class="review-form">
                     <h3>사진 업로드</h3>
-                    <form method="POST" enctype="multipart/form-data">
+                    <form method="POST" enctype="multipart/form-data" id="photoForm">
                         <input type="hidden" name="restaurant" value="{{ pick.name }}">
                         <input type="hidden" name="photo_upload" value="true">
-                        <input type="file" name="photo" accept="image/*" required>
-                        <button type="submit" class="photo-btn">사진 등록</button>
+                        <input type="file" name="photo" id="photoInput" accept="image/*" required onchange="previewImage()">
+                        <img id="photoPreview" style="max-width: 200px; display: none; margin: 10px;">
+                        <button type="submit" class="photo-btn" onclick="this.disabled=true; this.innerText='업로드 중...'; this.form.submit();">사진 등록</button>
                     </form>
                 </div>
 
@@ -104,6 +120,11 @@
                                 <p>작성자: {{ r.username }}</p>
                                 <p>별점: {{ r.rating }} / 5</p>
                                 <p>{{ r.review }}</p>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="restaurant" value="{{ pick.name }}">
+                                    <input type="hidden" name="delete_review" value="{{ loop.index0 }}">
+                                    <button type="submit" class="delete-btn" onclick="this.disabled=true; this.innerText='삭제 중...'; this.form.submit();">삭제</button>
+                                </form>
                             </div>
                         {% endfor %}
                     {% else %}
@@ -117,11 +138,11 @@
                 <h3>사진 갤러리</h3>
                 {% for photo in photos %}
                     <div>
-                        <img src="{{ url_for('uploaded_file', filename=photo) }}" alt="식당 사진" onclick="openModal(this.src)">
+                        <img src="data:image/jpeg;base64,{{ photo }}" alt="식당 사진" onclick="openModal(this.src)">
                         <form method="POST" style="display: inline;">
                             <input type="hidden" name="restaurant" value="{{ pick.name }}">
-                            <input type="hidden" name="delete_photo" value="{{ photo }}">
-                            <button type="submit" class="delete-btn">삭제</button>
+                            <input type="hidden" name="delete_photo" value="{{ loop.index0 }}">
+                            <button type="submit" class="delete-btn" onclick="this.disabled=true; this.innerText='삭제 중...'; this.form.submit();">삭제</button>
                         </form>
                     </div>
                 {% endfor %}
@@ -129,7 +150,6 @@
         {% endif %}
     </div>
 
-    <!-- 모달 -->
     <div id="photoModal" class="modal">
         <span class="close" onclick="closeModal()">×</span>
         <img class="modal-content" id="modalImage">
@@ -152,6 +172,43 @@
             var modal = document.getElementById("photoModal");
             if (event.target == modal) {
                 modal.style.display = "none";
+            }
+        }
+
+        function previewImage() {
+            var file = document.getElementById('photoInput').files[0];
+            var preview = document.getElementById('photoPreview');
+            preview.style.display = 'block';
+            preview.src = URL.createObjectURL(file);
+        }
+
+        function toggleFavorite(name) {
+            var favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+            var btn = document.getElementById('fav-' + name);
+            if (favorites.includes(name)) {
+                favorites = favorites.filter(f => f !== name);
+                btn.textContent = '즐겨찾기';
+            } else {
+                favorites.push(name);
+                btn.textContent = '즐겨찾기 해제';
+            }
+            localStorage.setItem('favorites', JSON.stringify(favorites));
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            var favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+            favorites.forEach(name => {
+                var btn = document.getElementById('fav-' + name);
+                if (btn) btn.textContent = '즐겨찾기 해제';
+            });
+        });
+
+        function filterRestaurants() {
+            var input = document.getElementById('searchInput').value.toLowerCase();
+            var list = document.getElementById('restaurantList').getElementsByTagName('li');
+            for (var i = 0; i < list.length; i++) {
+                var name = list[i].getElementsByTagName('button')[0].textContent.toLowerCase();
+                list[i].style.display = name.includes(input) ? '' : 'none';
             }
         }
     </script>
