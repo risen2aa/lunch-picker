@@ -4,45 +4,61 @@
     <title>점심 메뉴 추천기</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-        input, textarea, button { margin: 5px; padding: 5px; }
-        .review { border: 1px solid #ccc; margin: 10px auto; padding: 10px; max-width: 500px; }
+        body { font-family: 'Helvetica', Arial, sans-serif; text-align: center; padding: 20px; background-color: #f0f0f0; margin: 0; }
+        h1 { color: #333; font-size: 24px; margin-bottom: 20px; }
+        h2, h3 { color: #555; font-size: 18px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        input[type="text"], input[type="number"], textarea { width: 80%; max-width: 400px; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+        button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; margin: 10px 0; }
+        button:hover { background-color: #45a049; }
+        .review-btn { background-color: #2196F3; }
+        .review-btn:hover { background-color: #1e88e5; }
+        .result, .review-form, .reviews { margin-top: 20px; }
+        .review { border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px; background: #fafafa; max-width: 500px; margin-left: auto; margin-right: auto; }
+        a { color: #1e88e5; text-decoration: none; }
+        a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
-    <h1>오늘 점심 뭐 먹지?</h1>
-    <form method="POST">
-        <input type="text" name="preference" placeholder="먹고 싶은 메뉴 입력">
-        <button type="submit">추천받기</button>
-    </form>
-
-    {% if pick %}
-        <h2>추천 결과</h2>
-        <p>주메뉴: {{ pick.main_menu }}</p>
-        <p>식당명: {{ pick.name }}</p>
-        <p><a href="{{ pick.url }}" target="_blank">{{ pick.url or "URL 없음" }}</a></p>
-
-        <h3>리뷰 남기기</h3>
+    <div class="container">
+        <h1>오늘 점심 뭐 먹지?</h1>
         <form method="POST">
-            <input type="hidden" name="preference" value="{{ request.form.get('preference', '') }}">
-            <input type="number" name="rating" min="1" max="5" placeholder="별점 (1-5)" required>
-            <br>
-            <textarea name="review" placeholder="후기" rows="3" cols="40" required></textarea>
-            <br>
-            <button type="submit">리뷰 등록</button>
+            <input type="text" name="preference" placeholder="먹고 싶은 메뉴 입력">
+            <button type="submit">추천받기</button>
         </form>
 
-        <h3>리뷰 목록</h3>
-        {% if reviews %}
-            {% for r in reviews %}
-                <div class="review">
-                    <p>별점: {{ r.rating }} / 5</p>
-                    <p>{{ r.review }}</p>
-                </div>
-            {% endfor %}
-        {% else %}
-            <p>아직 리뷰가 없습니다.</p>
+        {% if pick %}
+            <div class="result">
+                <h2>추천 결과</h2>
+                <p>주메뉴: {{ pick.main_menu }}</p>
+                <p>식당명: {{ pick.name }}</p>
+                <p><a href="{{ pick.url }}" target="_blank">{{ pick.url or "URL 없음" }}</a></p>
+            </div>
+
+            <div class="review-form">
+                <h3>리뷰 남기기</h3>
+                <form method="POST">
+                    <input type="hidden" name="restaurant" value="{{ pick.name }}">
+                    <input type="number" name="rating" min="1" max="5" placeholder="별점 (1-5)" required>
+                    <textarea name="review" placeholder="후기" rows="3" required></textarea>
+                    <button type="submit" class="review-btn">리뷰 등록</button>
+                </form>
+            </div>
+
+            <div class="reviews">
+                <h3>리뷰 목록</h3>
+                {% if reviews %}
+                    {% for r in reviews %}
+                        <div class="review">
+                            <p>별점: {{ r.rating }} / 5</p>
+                            <p>{{ r.review }}</p>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>아직 리뷰가 없습니다.</p>
+                {% endif %}
+            </div>
         {% endif %}
-    {% endif %}
+    </div>
 </body>
 </html>

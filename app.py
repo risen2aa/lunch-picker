@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 # 식당 데이터
 restaurants = [
-     {"main_menu": "닭갈비", "name": "구도로식당", "url": "https://naver.me/GvcTy4hQ"},
+    {"main_menu": "닭갈비", "name": "구도로식당", "url": "https://naver.me/GvcTy4hQ"},
     {"main_menu": "한식", "name": "금슬", "url": "https://naver.me/GipBM8wO"},
     {"main_menu": "우동", "name": "깡우동", "url": "https://naver.me/5gFlnctz"},
     {"main_menu": "분식", "name": "남촌김밥", "url": "https://naver.me/x4FLKdMg"},
@@ -46,48 +46,46 @@ restaurants = [
     {"main_menu": "중식", "name": "하오하오", "url": "https://naver.me/FN7ZCHbm"},
     {"main_menu": "쌀국수", "name": "하이비엣남_쌀국수", "url": "https://naver.me/52RVh9SW"},
     {"main_menu": "중식", "name": "홍콩반점0410", "url": "https://naver.me/5KbK526x"},
-    # 전체 데이터 추가 가능
 ]
 
-# 리뷰 데이터 파일
 REVIEW_FILE = "reviews.json"
 
-# 리뷰 로드 함수
 def load_reviews():
     if os.path.exists(REVIEW_FILE):
         with open(REVIEW_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
-# 리뷰 저장 함수
 def save_reviews(reviews):
     with open(REVIEW_FILE, "w", encoding="utf-8") as f:
         json.dump(reviews, f, ensure_ascii=False, indent=4)
 
-# 메인 페이지
 @app.route('/', methods=['GET', 'POST'])
 def index():
     pick = None
     reviews = []
+    
     if request.method == 'POST':
-        preference = request.form.get('preference', '')
-        filtered = [r for r in restaurants if preference in r["main_menu"] or not preference] or restaurants
-        pick = random.choice(filtered)
+        # 추천받기
+        if 'preference' in request.form and 'rating' not in request.form:
+            preference = request.form.get('preference', '')
+            filtered = [r for r in restaurants if preference in r["main_menu"] or not preference] or restaurants
+            pick = random.choice(filtered)
+            reviews = load_reviews().get(pick['name'], [])
         
-        # 리뷰 제출 처리
-        if 'rating' in request.form and 'review' in request.form:
+        # 리뷰 등록
+        elif 'rating' in request.form and 'review' in request.form and 'restaurant' in request.form:
+            restaurant = request.form['restaurant']
             rating = request.form['rating']
             review = request.form['review']
             if rating and review:
                 reviews_dict = load_reviews()
-                restaurant = pick['name']
                 if restaurant not in reviews_dict:
                     reviews_dict[restaurant] = []
                 reviews_dict[restaurant].append({"rating": rating, "review": review})
                 save_reviews(reviews_dict)
-        
-        # 현재 식당의 리뷰 가져오기
-        reviews = load_reviews().get(pick['name'], [])
+            pick = next(r for r in restaurants if r['name'] == restaurant)  # 현재 식당 유지
+            reviews = load_reviews().get(restaurant, [])
     
     return render_template('index.html', pick=pick, reviews=reviews)
 
