@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>점심 메뉴 추천기</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        input, textarea, button { margin: 5px; padding: 5px; }
+        .review { border: 1px solid #ccc; margin: 10px auto; padding: 10px; max-width: 500px; }
+    </style>
+</head>
+<body>
+    <h1>오늘 점심 뭐 먹지?</h1>
+    <form method="POST">
+        <input type="text" name="preference" placeholder="먹고 싶은 메뉴 입력">
+        <button type="submit">추천받기</button>
+    </form>
+
+    {% if pick %}
+        <h2>추천 결과</h2>
+        <p>주메뉴: {{ pick.main_menu }}</p>
+        <p>식당명: {{ pick.name }}</p>
+        <p><a href="{{ pick.url }}" target="_blank">{{ pick.url or "URL 없음" }}</a></p>
+
+        <h3>리뷰 남기기</h3>
+        <form method="POST">
+            <input type="hidden" name="preference" value="{{ request.form.get('preference', '') }}">
+            <input type="number" name="rating" min="1" max="5" placeholder="별점 (1-5)" required>
+            <br>
+            <textarea name="review" placeholder="후기" rows="3" cols="40" required></textarea>
+            <br>
+            <button type="submit">리뷰 등록</button>
+        </form>
+
+        <h3>리뷰 목록</h3>
+        {% if reviews %}
+            {% for r in reviews %}
+                <div class="review">
+                    <p>별점: {{ r.rating }} / 5</p>
+                    <p>{{ r.review }}</p>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>아직 리뷰가 없습니다.</p>
+        {% endif %}
+    {% endif %}
+</body>
+</html>
