@@ -4,17 +4,22 @@ import os
 import base64
 import firebase_admin
 from firebase_admin import credentials, firestore
-import json
-from google.oauth2 import service_account
 
 app = Flask(__name__)
 
-# Firebase 초기화 (환경 변수에서 키 로드)
-cred_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON', '{"type": "service_account", ...}')  # 로컬은 JSON 파일로 대체
-cred_dict = json.loads(cred_json)
-cred = credentials.Certificate(cred_dict)
+# Firebase 초기화 (로컬: JSON 파일, Render: 환경 변수)
+if os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON'):
+    cred_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+    cred = credentials.Certificate(json.loads(cred_json))
+else:
+    cred = credentials.Certificate("lunch-picker-81091-firebase-adminsdk-fbsvc-48999fd375.json")  # 로컬 파일 경로
 firebase_admin.initialize_app(cred)
 db = firestore.client()
+
+# 캐시 초기화
+reviews_cache = {}
+photos_cache = {}
+visits_cache = {}
 
 restaurants = sorted([
     {"main_menu": "닭갈비", "name": "구도로식당", "url": "https://naver.me/GvcTy4hQ"},
@@ -62,28 +67,40 @@ restaurants = sorted([
 ], key=lambda x: x['name'])
 
 def load_reviews():
-    reviews_ref = db.collection('reviews').get()
-    reviews = {}
-    for doc in reviews_ref:
-        restaurant = doc.id
-        reviews[restaurant] = doc.to_dict().get('reviews', [])
-    return reviews
+    if not reviews_cache:
+        reviews_ref = db.collection('reviews').get()
+        for doc in reviews_ref:
+            reviews_cache[doc.id] = doc.to_dict().get('reviews', [])
+    return reviews_cache
 
 def save_reviews(reviews):
     for restaurant, review_list in reviews.items():
+        reviews_cache[restaurant] = review_list
         db.collection('reviews').document(restaurant).set({'reviews': review_list})
 
 def load_photos():
-    photos_ref = db.collection('photos').get()
-    photos = {}
-    for doc in photos_ref:
-        restaurant = doc.id
-        photos[restaurant] = doc.to_dict().get('photos', [])
-    return photos
+    if not photos_cache:
+        photos_ref = db.collection('photos').get()
+        for doc in photos_ref:
+            photos_cache[doc.id] = doc.to_dict().get('photos', [])
+    return photos_cache
 
 def save_photos(photos):
     for restaurant, photo_list in photos.items():
+        photos_cache[restaurant] = photo_list
         db.collection('photos').document(restaurant).set({'photos': photo_list})
+
+def load_visits():
+    if not visits_cache:
+        visits_ref = db.collection('visits').get()
+        for doc in visits_ref:
+            visits_cache[doc.id] = doc.to_dict().get('count', 0)
+    return visits_cache
+
+def save_visits(visits):
+    for restaurant, count in visits.items():
+        visits_cache[restaurant] = count
+        db.collection('visits').document(restaurant).set({'count': count})
 
 def calculate_average_rating(reviews):
     if not reviews:
@@ -101,14 +118,18 @@ def index():
     reviews = []
     avg_rating = 0
     photos = []
+    visits = load_visits()
     message = None
+    reason = None
     
     if request.method == 'POST':
         try:
-            if 'preference' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form and 'delete_photo' not in request.form and 'delete_review' not in request.form:
+            if 'preference' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form and 'delete_photo' not in request.form and 'delete_review' not in request.form and 'visit' not in request.form:
                 preference = request.form.get('preference', '')
                 filtered = [r for r in restaurants if preference in r["main_menu"] or not preference] or restaurants
                 pick = random.choice(filtered)
+                avg = calculate_average_rating(load_reviews().get(pick['name'], []))
+                reason = f"최근 별점 {avg}/5를 받은 인기 식당!" if avg > 0 else "무작위로 추천된 맛집!"
             
             elif 'rating' in request.form and 'review' in request.form and 'restaurant' in request.form:
                 restaurant = request.form['restaurant']
@@ -146,7 +167,7 @@ def index():
                 if restaurant in photos_dict and 0 <= photo_index < len(photos_dict[restaurant]):
                     del photos_dict[restaurant][photo_index]
                     if not photos_dict[restaurant]:
-                        db.collection('photos').document(restaurant).delete()  # 빈 리스트면 문서 삭제
+                        db.collection('photos').document(restaurant).delete()
                     else:
                         save_photos(photos_dict)
                     message = "사진이 삭제되었습니다!"
@@ -163,9 +184,19 @@ def index():
                     save_reviews(reviews_dict)
                     message = "리뷰가 삭제되었습니다!"
             
-            elif 'restaurant' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form and 'delete_photo' not in request.form and 'delete_review' not in request.form:
+            elif 'visit' in request.form and 'restaurant' in request.form:
                 restaurant = request.form['restaurant']
                 pick = next(r for r in restaurants if r['name'] == restaurant)
+                visits = load_visits()
+                visits[restaurant] = visits.get(restaurant, 0) + 1
+                save_visits(visits)
+                message = "방문 체크 완료!"
+            
+            elif 'restaurant' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form and 'delete_photo' not in request.form and 'delete_review' not in request.form and 'visit' not in request.form:
+                restaurant = request.form['restaurant']
+                pick = next(r for r in restaurants if r['name'] == restaurant)
+                avg = calculate_average_rating(load_reviews().get(pick['name'], []))
+                reason = f"최근 별점 {avg}/5를 받은 인기 식당!" if avg > 0 else "무작위로 추천된 맛집!"
         except Exception as e:
             message = f"오류 발생: {str(e)}"
     
@@ -174,7 +205,7 @@ def index():
         avg_rating = calculate_average_rating(reviews)
         photos = load_photos().get(pick['name'], [])
     
-    return render_template('index.html', restaurants=restaurants, pick=pick, reviews=reviews, avg_rating=avg_rating, photos=photos, message=message)
+    return render_template('index.html', restaurants=restaurants, pick=pick, reviews=reviews, avg_rating=avg_rating, photos=photos, visits=visits, message=message, reason=reason)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

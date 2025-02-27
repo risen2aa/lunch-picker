@@ -30,6 +30,9 @@
         .photo-btn:hover { background-color: #fb8c00; }
         .delete-btn { background-color: #f44336; }
         .delete-btn:hover { background-color: #d32f2f; }
+        .visit-btn { background-color: #8BC34A; }
+        .visit-btn:hover { background-color: #7CB342; }
+        .fav-btn.active { color: red; }
         .result, .review-form, .reviews, .photos { margin-top: 20px; }
         .review { border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px; background: #fafafa; max-width: 500px; margin-left: auto; margin-right: auto; }
         .avg-rating { font-size: 18px; color: #ff9800; }
@@ -41,6 +44,7 @@
         .close { position: absolute; top: 10px; right: 25px; color: white; font-size: 35px; font-weight: bold; cursor: pointer; }
         .message { color: green; margin: 10px 0; }
         .error { color: red; margin: 10px 0; }
+        .reason { font-size: 14px; color: #777; }
         @media (max-width: 768px) {
             .sidebar { width: 150px; }
             .main { margin-left: 150px; }
@@ -86,7 +90,13 @@
                     <p>주메뉴: {{ pick.main_menu }}</p>
                     <p>식당명: {{ pick.name }}</p>
                     <p><a href="{{ pick.url }}" target="_blank">{{ pick.url or "URL 없음" }}</a></p>
-                    <button onclick="toggleFavorite('{{ pick.name }}')" id="fav-{{ pick.name }}">즐겨찾기</button>
+                    <p class="reason">{{ reason }}</p>
+                    <button onclick="toggleFavorite('{{ pick.name }}')" id="fav-{{ pick.name }}" class="fav-btn">❤️</button>
+                    <form method="POST" style="display: inline;">
+                        <input type="hidden" name="restaurant" value="{{ pick.name }}">
+                        <input type="hidden" name="visit" value="true">
+                        <button type="submit" class="visit-btn" onclick="this.disabled=true; this.innerText='체크 중...'; this.form.submit();">✅ 방문 체크 ({{ visits.get(pick.name, 0) }})</button>
+                    </form>
                 </div>
 
                 <div class="review-form">
@@ -107,18 +117,18 @@
                         <input type="hidden" name="photo_upload" value="true">
                         <input type="file" name="photo" id="photoInput" accept="image/*" required onchange="previewImage()">
                         <img id="photoPreview" style="max-width: 200px; display: none; margin: 10px;">
-                        <button type="submit" class="photo-btn" onclick="this.disabled=true; this.innerText='업로드 중...'; this.form.submit();">사진 등록</button>
+                        <button type="submit" class="photo-btn" onclick="this.disabled=true; this.innerText='업로드 중...'; this.form.submit();">📷 사진 등록</button>
                     </form>
                 </div>
 
                 <div class="reviews">
                     <h3>리뷰 정보</h3>
                     {% if reviews %}
-                        <p class="avg-rating">평균 별점: {{ avg_rating }} / 5 ({{ reviews|length }} 리뷰)</p>
+                        <p class="avg-rating">평균 별점: {% for i in range(5) %}{% if i < avg_rating|round|int %}⭐{% else %}☆{% endif %}{% endfor %} ({{ reviews|length }} 리뷰)</p>
                         {% for r in reviews %}
-                            <div class="review">
+                            <div class="review" data-rating="{{ r.rating }}" data-index="{{ loop.index0 }}">
                                 <p>작성자: {{ r.username }}</p>
-                                <p>별점: {{ r.rating }} / 5</p>
+                                <p>별점: {% for i in range(5) %}{% if i < r.rating|int %}⭐{% else %}☆{% endif %}{% endfor %}</p>
                                 <p>{{ r.review }}</p>
                                 <form method="POST" style="display: inline;">
                                     <input type="hidden" name="restaurant" value="{{ pick.name }}">
@@ -187,10 +197,10 @@
             var btn = document.getElementById('fav-' + name);
             if (favorites.includes(name)) {
                 favorites = favorites.filter(f => f !== name);
-                btn.textContent = '즐겨찾기';
+                btn.classList.remove('active');
             } else {
                 favorites.push(name);
-                btn.textContent = '즐겨찾기 해제';
+                btn.classList.add('active');
             }
             localStorage.setItem('favorites', JSON.stringify(favorites));
         }
@@ -199,7 +209,7 @@
             var favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
             favorites.forEach(name => {
                 var btn = document.getElementById('fav-' + name);
-                if (btn) btn.textContent = '즐겨찾기 해제';
+                if (btn) btn.classList.add('active');
             });
         });
 
