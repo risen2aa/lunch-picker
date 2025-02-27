@@ -4,61 +4,106 @@
     <title>점심 메뉴 추천기</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: 'Helvetica', Arial, sans-serif; text-align: center; padding: 20px; background-color: #f0f0f0; margin: 0; }
+        body { font-family: 'Helvetica', Arial, sans-serif; margin: 0; background-color: #f0f0f0; display: flex; }
+        .sidebar { width: 200px; background: #fff; padding: 10px; border-right: 1px solid #ddd; overflow-y: auto; height: 100vh; }
+        .sidebar h2 { color: #333; font-size: 16px; margin: 10px 0; }
+        .sidebar ul { list-style: none; padding: 0; }
+        .sidebar li { margin: 2px 0; }
+        .sidebar form { margin: 0; }
+        .sidebar button { background: none; border: none; color: #1e88e5; text-align: left; width: 100%; padding: 2px 5px; cursor: pointer; font-size: 14px; }
+        .sidebar button:hover { text-decoration: underline; }
+        .main { flex-grow: 1; padding: 20px; display: flex; justify-content: center; }
+        .content { max-width: 600px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
+        .photo-gallery { width: 300px; margin-left: 20px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         h1 { color: #333; font-size: 24px; margin-bottom: 20px; }
         h2, h3 { color: #555; font-size: 18px; }
-        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         input[type="text"], input[type="number"], textarea { width: 80%; max-width: 400px; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
         button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; margin: 10px 0; }
         button:hover { background-color: #45a049; }
         .review-btn { background-color: #2196F3; }
         .review-btn:hover { background-color: #1e88e5; }
-        .result, .review-form, .reviews { margin-top: 20px; }
+        .photo-btn { background-color: #ff9800; }
+        .photo-btn:hover { background-color: #fb8c00; }
+        .result, .review-form, .reviews, .photos { margin-top: 20px; }
         .review { border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px; background: #fafafa; max-width: 500px; margin-left: auto; margin-right: auto; }
+        .avg-rating { font-size: 18px; color: #ff9800; }
         a { color: #1e88e5; text-decoration: none; }
         a:hover { text-decoration: underline; }
-        .avg-rating { font-size: 18px; color: #ff9800; }
+        img { max-width: 200px; margin: 10px; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>오늘 점심 뭐 먹지?</h1>
-        <form method="POST">
-            <input type="text" name="preference" placeholder="먹고 싶은 메뉴 입력">
-            <button type="submit">추천받기</button>
-        </form>
+    <div class="sidebar">
+        <h2>식당 목록</h2>
+        <ul>
+            {% for restaurant in restaurants %}
+                <li>
+                    <form method="POST">
+                        <input type="hidden" name="restaurant" value="{{ restaurant.name }}">
+                        <button type="submit">{{ restaurant.name }}</button>
+                    </form>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div class="main">
+        <div class="content">
+            <h1>오늘 점심 뭐 먹지?</h1>
+            <form method="POST">
+                <input type="text" name="preference" placeholder="먹고 싶은 메뉴 입력">
+                <button type="submit">추천받기</button>
+            </form>
 
-        {% if pick %}
-            <div class="result">
-                <h2>추천 결과</h2>
-                <p>주메뉴: {{ pick.main_menu }}</p>
-                <p>식당명: {{ pick.name }}</p>
-                <p><a href="{{ pick.url }}" target="_blank">{{ pick.url or "URL 없음" }}</a></p>
-            </div>
+            {% if pick %}
+                <div class="result">
+                    <h2>추천 결과</h2>
+                    <p>주메뉴: {{ pick.main_menu }}</p>
+                    <p>식당명: {{ pick.name }}</p>
+                    <p><a href="{{ pick.url }}" target="_blank">{{ pick.url or "URL 없음" }}</a></p>
+                </div>
 
-            <div class="review-form">
-                <h3>리뷰 남기기</h3>
-                <form method="POST">
-                    <input type="hidden" name="restaurant" value="{{ pick.name }}">
-                    <input type="number" name="rating" min="1" max="5" placeholder="별점 (1-5)" required>
-                    <textarea name="review" placeholder="후기" rows="3" required></textarea>
-                    <button type="submit" class="review-btn">리뷰 등록</button>
-                </form>
-            </div>
+                <div class="review-form">
+                    <h3>리뷰 남기기</h3>
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="restaurant" value="{{ pick.name }}">
+                        <input type="number" name="rating" min="1" max="5" placeholder="별점 (1-5)" required>
+                        <textarea name="review" placeholder="후기" rows="3" required></textarea>
+                        <button type="submit" class="review-btn">리뷰 등록</button>
+                    </form>
+                </div>
 
-            <div class="reviews">
-                <h3>리뷰 정보</h3>
-                {% if reviews %}
-                    <p class="avg-rating">평균 별점: {{ avg_rating }} / 5 ({{ reviews|length }} 리뷰)</p>
-                    {% for r in reviews %}
-                        <div class="review">
-                            <p>별점: {{ r.rating }} / 5</p>
-                            <p>{{ r.review }}</p>
-                        </div>
-                    {% endfor %}
-                {% else %}
-                    <p>아직 리뷰가 없습니다.</p>
-                {% endif %}
+                <div class="review-form">
+                    <h3>사진 업로드</h3>
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="restaurant" value="{{ pick.name }}">
+                        <input type="hidden" name="photo_upload" value="true">
+                        <input type="file" name="photo" accept="image/*" required>
+                        <button type="submit" class="photo-btn">사진 등록</button>
+                    </form>
+                </div>
+
+                <div class="reviews">
+                    <h3>리뷰 정보</h3>
+                    {% if reviews %}
+                        <p class="avg-rating">평균 별점: {{ avg_rating }} / 5 ({{ reviews|length }} 리뷰)</p>
+                        {% for r in reviews %}
+                            <div class="review">
+                                <p>별점: {{ r.rating }} / 5</p>
+                                <p>{{ r.review }}</p>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <p>아직 리뷰가 없습니다.</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+        {% if pick and photos %}
+            <div class="photo-gallery">
+                <h3>사진 갤러리</h3>
+                {% for photo in photos %}
+                    <img src="{{ url_for('uploaded_file', filename=photo) }}" alt="식당 사진">
+                {% endfor %}
             </div>
         {% endif %}
     </div>

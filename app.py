@@ -1,11 +1,17 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import random
 import json
 import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# 식당 데이터
+# 업로드 폴더 설정
+UPLOAD_FOLDER = 'static/uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
 restaurants = [
     {"main_menu": "닭갈비", "name": "구도로식당", "url": "https://naver.me/GvcTy4hQ"},
     {"main_menu": "한식", "name": "금슬", "url": "https://naver.me/GipBM8wO"},
@@ -52,6 +58,7 @@ restaurants = [
 ]
 
 REVIEW_FILE = "reviews.json"
+PHOTO_FILE = "photos.json"
 
 def load_reviews():
     if os.path.exists(REVIEW_FILE):
@@ -63,43 +70,83 @@ def save_reviews(reviews):
     with open(REVIEW_FILE, "w", encoding="utf-8") as f:
         json.dump(reviews, f, ensure_ascii=False, indent=4)
 
+def load_photos():
+    if os.path.exists(PHOTO_FILE):
+        with open(PHOTO_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_photos(photos):
+    with open(PHOTO_FILE, "w", encoding="utf-8") as f:
+        json.dump(photos, f, ensure_ascii=False, indent=4)
+
 def calculate_average_rating(reviews):
     if not reviews:
         return 0
     total = sum(int(r['rating']) for r in reviews)
     return round(total / len(reviews), 1)
 
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     pick = None
     reviews = []
     avg_rating = 0
+    photos = []
     
     if request.method == 'POST':
         # 추천받기
-        if 'preference' in request.form and 'rating' not in request.form:
+        if 'preference' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form:
             preference = request.form.get('preference', '')
             filtered = [r for r in restaurants if preference in r["main_menu"] or not preference] or restaurants
             pick = random.choice(filtered)
-            reviews = load_reviews().get(pick['name'], [])
-            avg_rating = calculate_average_rating(reviews)
         
         # 리뷰 등록
         elif 'rating' in request.form and 'review' in request.form and 'restaurant' in request.form:
             restaurant = request.form['restaurant']
             rating = request.form['rating']
             review = request.form['review']
+            pick = next(r for r in restaurants if r['name'] == restaurant)
+            
             if rating and review:
                 reviews_dict = load_reviews()
                 if restaurant not in reviews_dict:
                     reviews_dict[restaurant] = []
                 reviews_dict[restaurant].append({"rating": rating, "review": review})
                 save_reviews(reviews_dict)
+        
+        # 사진 업로드
+        elif 'photo_upload' in request.form and 'restaurant' in request.form:
+            restaurant = request.form['restaurant']
             pick = next(r for r in restaurants if r['name'] == restaurant)
-            reviews = load_reviews().get(restaurant, [])
-            avg_rating = calculate_average_rating(reviews)
+            if 'photo' in request.files:
+                file = request.files['photo']
+                if file and allowed_file(file.filename):
+                    photos_dict = load_photos()
+                    if restaurant not in photos_dict:
+                        photos_dict[restaurant] = []
+                    filename = secure_filename(f"{restaurant}_{len(photos_dict[restaurant])}_{file.filename}")
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                    photos_dict[restaurant].append(filename)
+                    save_photos(photos_dict)
+        
+        # 식당 선택
+        elif 'restaurant' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form:
+            restaurant = request.form['restaurant']
+            pick = next(r for r in restaurants if r['name'] == restaurant)
+
+    if pick:
+        reviews = load_reviews().get(pick['name'], [])
+        avg_rating = calculate_average_rating(reviews)
+        photos = load_photos().get(pick['name'], [])
     
-    return render_template('index.html', pick=pick, reviews=reviews, avg_rating=avg_rating)
+    return render_template('index.html', restaurants=restaurants, pick=pick, reviews=reviews, avg_rating=avg_rating, photos=photos)
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
