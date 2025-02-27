@@ -1,10 +1,16 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import random
-import json
 import os
 from werkzeug.utils import secure_filename
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 app = Flask(__name__)
+
+# Firebase 초기화 (파일 이름 수정)
+cred = credentials.Certificate("lunch-picker-81091-firebase-adminsdk-fbsvc-48999fd375.json")
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 # 업로드 폴더 설정
 UPLOAD_FOLDER = 'static/uploads'
@@ -57,28 +63,29 @@ restaurants = [
     {"main_menu": "중식", "name": "홍콩반점0410", "url": "https://naver.me/5KbK526x"},
 ]
 
-REVIEW_FILE = "reviews.json"
-PHOTO_FILE = "photos.json"
-
 def load_reviews():
-    if os.path.exists(REVIEW_FILE):
-        with open(REVIEW_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+    reviews_ref = db.collection('reviews').get()
+    reviews = {}
+    for doc in reviews_ref:
+        restaurant = doc.id
+        reviews[restaurant] = doc.to_dict().get('reviews', [])
+    return reviews
 
 def save_reviews(reviews):
-    with open(REVIEW_FILE, "w", encoding="utf-8") as f:
-        json.dump(reviews, f, ensure_ascii=False, indent=4)
+    for restaurant, review_list in reviews.items():
+        db.collection('reviews').document(restaurant).set({'reviews': review_list})
 
 def load_photos():
-    if os.path.exists(PHOTO_FILE):
-        with open(PHOTO_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+    photos_ref = db.collection('photos').get()
+    photos = {}
+    for doc in photos_ref:
+        restaurant = doc.id
+        photos[restaurant] = doc.to_dict().get('photos', [])
+    return photos
 
 def save_photos(photos):
-    with open(PHOTO_FILE, "w", encoding="utf-8") as f:
-        json.dump(photos, f, ensure_ascii=False, indent=4)
+    for restaurant, photo_list in photos.items():
+        db.collection('photos').document(restaurant).set({'photos': photo_list})
 
 def calculate_average_rating(reviews):
     if not reviews:
@@ -98,7 +105,7 @@ def index():
     
     if request.method == 'POST':
         # 추천받기
-        if 'preference' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form:
+        if 'preference' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form and 'delete_photo' not in request.form:
             preference = request.form.get('preference', '')
             filtered = [r for r in restaurants if preference in r["main_menu"] or not preference] or restaurants
             pick = random.choice(filtered)
@@ -108,13 +115,14 @@ def index():
             restaurant = request.form['restaurant']
             rating = request.form['rating']
             review = request.form['review']
+            username = request.form.get('username', '익명')
             pick = next(r for r in restaurants if r['name'] == restaurant)
             
             if rating and review:
                 reviews_dict = load_reviews()
                 if restaurant not in reviews_dict:
                     reviews_dict[restaurant] = []
-                reviews_dict[restaurant].append({"rating": rating, "review": review})
+                reviews_dict[restaurant].append({"rating": rating, "review": review, "username": username})
                 save_reviews(reviews_dict)
         
         # 사진 업로드
@@ -132,8 +140,21 @@ def index():
                     photos_dict[restaurant].append(filename)
                     save_photos(photos_dict)
         
+        # 사진 삭제
+        elif 'delete_photo' in request.form and 'restaurant' in request.form:
+            restaurant = request.form['restaurant']
+            photo_to_delete = request.form['delete_photo']
+            pick = next(r for r in restaurants if r['name'] == restaurant)
+            photos_dict = load_photos()
+            if restaurant in photos_dict and photo_to_delete in photos_dict[restaurant]:
+                photos_dict[restaurant].remove(photo_to_delete)
+                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], photo_to_delete))
+                if not photos_dict[restaurant]:
+                    del photos_dict[restaurant]
+                save_photos(photos_dict)
+        
         # 식당 선택
-        elif 'restaurant' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form:
+        elif 'restaurant' in request.form and 'rating' not in request.form and 'photo_upload' not in request.form and 'delete_photo' not in request.form:
             restaurant = request.form['restaurant']
             pick = next(r for r in restaurants if r['name'] == restaurant)
 
