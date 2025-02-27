@@ -4,11 +4,15 @@ import os
 from werkzeug.utils import secure_filename
 import firebase_admin
 from firebase_admin import credentials, firestore
+import json
+from google.oauth2 import service_account
 
 app = Flask(__name__)
 
-# Firebase 초기화 (파일 이름 수정)
-cred = credentials.Certificate("lunch-picker-81091-firebase-adminsdk-fbsvc-48999fd375.json")
+# Firebase 초기화 (환경 변수에서 키 로드)
+cred_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+cred_dict = json.loads(cred_json)
+cred = credentials.Certificate(cred_dict)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
