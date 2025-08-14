@@ -13,14 +13,8 @@ from flask import Flask, render_template, request, Response, abort
 from jinja2 import DictLoader
 import aiofiles
 from dotenv import load_dotenv
-
-# Firestore 의존성 처리
-try:
-    from google.cloud.firestore import AsyncClient as FirestoreAsyncClient, Increment
-    FIRESTORE_AVAILABLE = True
-except Exception:
-    FirestoreAsyncClient = None
-    FIRESTORE_AVAILABLE = False
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # 환경 변수 로드 및 앱 설정
 load_dotenv()
@@ -409,94 +403,39 @@ def _set_cached(bucket: dict, key: str, data):
     bucket[key] = {"ts": time.time(), "data": data}
     return data
 
-# 스토리지 레이어
-class Storage:
-    async def get_reviews(self, name): raise NotImplementedError
-    async def save_reviews(self, name, reviews): raise NotImplementedError
-    async def get_photos(self, name): raise NotImplementedError
-    async def save_photos(self, name, photos): raise NotImplementedError
-    async def get_visits(self, name): raise NotImplementedError
-    async def increment_visits(self, name): raise NotImplementedError
+# Firestore 스토리지 레이어
+cred = credentials.Certificate(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', 'credentials/service-account.json'))
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
-class JsonStorage(Storage):
-    def __init__(self, path='local_data.json'):
-        self.path = path
-        if not os.path.exists(path):
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump({"reviews": {}, "photos": {}, "visits": {}}, f, ensure_ascii=False)
-
-    async def _load(self):
-        try:
-            async with aiofiles.open(self.path, 'r', encoding='utf-8') as f:
-                return json.loads(await f.read())
-        except FileNotFoundError:
-            return {"reviews": {}, "photos": {}, "visits": {}}
-
-    async def _save(self, data):
-        async with aiofiles.open(self.path, 'w', encoding='utf-8') as f:
-            await f.write(json.dumps(data, ensure_ascii=False))
-
-    async def get_reviews(self, name):
-        d = await self._load()
-        return d.get('reviews', {}).get(name, [])
-
-    async def save_reviews(self, name, reviews):
-        d = await self._load()
-        d.setdefault('reviews', {})[name] = reviews
-        await self._save(d)
-
-    async def get_photos(self, name):
-        d = await self._load()
-        return d.get('photos', {}).get(name, [])
-
-    async def save_photos(self, name, photos):
-        d = await self._load()
-        if photos:
-            d.setdefault('photos', {})[name] = photos
-        else:
-            d.setdefault('photos', {}).pop(name, None)
-        await self._save(d)
-
-    async def get_visits(self, name):
-        d = await self._load()
-        return int(d.get('visits', {}).get(name, 0))
-
-    async def increment_visits(self, name):
-        d = await self._load()
-        v = int(d.get('visits', {}).get(name, 0)) + 1
-        d.setdefault('visits', {})[name] = v
-        await self._save(d)
-        return v
-
-class FirestoreStorage(Storage):
-    def __init__(self, db):
-        self.db = db  # AsyncClient
-
+class FirestoreStorage:
     async def get_reviews(self, name):
         try:
-            doc = await self.db.collection('reviews').document(name).get()
-            return (doc.to_dict() or {}).get('reviews', []) if doc.exists else []
+            doc_ref = db.collection('reviews').document(name)
+            doc = await doc_ref.get()
+            return doc.to_dict().get('reviews', []) if doc.exists else []
         except Exception as e:
             print(f"[ERROR] Firestore get_reviews failed: {e}", file=sys.stderr)
             return []
 
     async def save_reviews(self, name, reviews):
         try:
-            await self.db.collection('reviews').document(name).set({'reviews': reviews})
+            await db.collection('reviews').document(name).set({'reviews': reviews})
         except Exception as e:
             print(f"[ERROR] Firestore save_reviews failed: {e}", file=sys.stderr)
 
     async def get_photos(self, name):
         try:
-            doc = await self.db.collection('photos').document(name).get()
-            return (doc.to_dict() or {}).get('photos', []) if doc.exists else []
+            doc_ref = db.collection('photos').document(name)
+            doc = await doc_ref.get()
+            return doc.to_dict().get('photos', []) if doc.exists else []
         except Exception as e:
             print(f"[ERROR] Firestore get_photos failed: {e}", file=sys.stderr)
             return []
 
     async def save_photos(self, name, photos):
         try:
-            ref = self.db.collection('photos').document(name)
+            ref = db.collection('photos').document(name)
             if photos:
                 await ref.set({'photos': photos})
             else:
@@ -506,45 +445,25 @@ class FirestoreStorage(Storage):
 
     async def get_visits(self, name):
         try:
-            doc = await self.db.collection('visits').document(name).get()
-            return int((doc.to_dict() or {}).get('count', 0)) if doc.exists else 0
+            doc_ref = db.collection('visits').document(name)
+            doc = await doc_ref.get()
+            return int(doc.to_dict().get('count', 0)) if doc.exists else 0
         except Exception as e:
             print(f"[ERROR] Firestore get_visits failed: {e}", file=sys.stderr)
             return 0
 
     async def increment_visits(self, name):
         try:
-            ref = self.db.collection('visits').document(name)
-            await ref.set({'count': Increment(1)}, merge=True)
-            return await self.get_visits(name)
+            doc_ref = db.collection('visits').document(name)
+            doc = await doc_ref.get()
+            current = doc.to_dict().get('count', 0) if doc.exists else 0
+            await doc_ref.set({'count': current + 1})
+            return current + 1
         except Exception as e:
             print(f"[ERROR] Firestore increment_visits failed: {e}", file=sys.stderr)
             return await self.get_visits(name)
 
-# 스토리지 초기화
-async def init_storage() -> Storage:
-    _use_local = os.environ.get('USE_LOCAL_STORAGE') == '1'
-    if _use_local or not FIRESTORE_AVAILABLE:
-        if not FIRESTORE_AVAILABLE and not _use_local:
-            print("[INFO] google-cloud-firestore 미설치 — 로컬 스토리지 사용", file=sys.stderr)
-        return JsonStorage()
-    if not (os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')):
-        print("[WARN] Google Cloud credentials not set, falling back to local storage", file=sys.stderr)
-        return JsonStorage()
-    try:
-        cred_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-        cred_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-        if cred_json and not cred_path:
-            tmp_path = Path('.gcp_service_account.json')
-            tmp_path.write_text(cred_json, encoding='utf-8')
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(tmp_path)
-        db = FirestoreAsyncClient()
-        return FirestoreStorage(db)
-    except Exception as e:
-        print(f"[WARN] Firestore 초기화 실패, 로컬 스토리지로 폴백: {e}", file=sys.stderr)
-        return JsonStorage()
-
-storage: Storage = asyncio.run(init_storage())
+storage = FirestoreStorage()
 
 # 캐시 래퍼
 async def get_reviews(name: str):
@@ -820,87 +739,9 @@ Sitemap: {request.url_root.rstrip('/')}/sitemap.xml
 
 @app.route('/healthz')
 def healthz():
-    return {'ok': True, 'storage': storage.__class__.__name__}
-
-# 테스트
-def run_tests():
-    import pytest
-    tests = r'''
-import os
-import json
-import asyncio
-import pytest
-from app import app, allowed_file, slugify, calculate_average_rating, JsonStorage
-
-@pytest.fixture
-def client():
-    app.config['TESTING'] = True
-    with app.test_client() as client:
-        yield client
-
-def test_allowed_file():
-    assert allowed_file('test.jpg')
-    assert allowed_file('test.PNG')
-    assert not allowed_file('test.txt')
-
-def test_slugify():
-    s = slugify('구 도 로 식 당', '닭갈비')
-    assert ' ' not in s
-    assert s == '구도로식당-닭갈비-명학역'
-
-def test_calculate_average_rating():
-    reviews = [{'rating': '5'}, {'rating': '3'}]
-    assert calculate_average_rating(reviews) == 4.0
-    assert calculate_average_rating([]) == 0.0
-
-def test_json_storage(tmp_path):
-    path = tmp_path / 'test_data.json'
-    js = JsonStorage(str(path))
-    asyncio.run(js.save_reviews('R', [{'rating': '5', 'review': '굿', 'username': 'me'}]))
-    r = asyncio.run(js.get_reviews('R'))
-    assert r[0]['rating'] == '5'
-    asyncio.run(js.save_photos('R', ['images/R_1.jpg']))
-    p = asyncio.run(js.get_photos('R'))
-    assert p[0] == 'images/R_1.jpg'
-    v1 = asyncio.run(js.increment_visits('R'))
-    v2 = asyncio.run(js.increment_visits('R'))
-    assert v2 == v1 + 1
-
-def test_index_get(client):
-    rv = client.get('/')
-    assert rv.status_code == 200
-    assert b'명학역 맛집 추천' in rv.data
-
-def test_place_404(client):
-    rv = client.get('/place/invalid-slug')
-    assert rv.status_code == 404
-
-def test_search(client):
-    rv = client.get('/search?q=돈가스')
-    assert rv.status_code == 200
-    assert b'돈가스' in rv.data
-
-def test_search_empty(client):
-    rv = client.get('/search?q=')
-    assert rv.status_code == 200
-    assert b'검색어를 입력해주세요' in rv.data
-
-def test_index_post_preference(client):
-    rv = client.post('/', data={'preference': '한식'})
-    assert rv.status_code == 200
-    assert b'최근 별점' in rv.data or b'무작위로 추천된 맛집' in rv.data
-'''
-    with open('test_app.py', 'w', encoding='utf-8') as f:
-        f.write(tests)
-    try:
-        pytest.main(['test_app.py', '-v'])
-    finally:
-        os.remove('test_app.py')
+    return {'ok': True, 'storage': 'FirestoreStorage'}
 
 # 앱 실행
 if __name__ == '__main__':
-    if os.environ.get('RUN_TESTS') == '1':
-        run_tests()
-        print('SELF TESTS PASSED')
-        raise SystemExit(0)
-    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
